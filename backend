@@ -64,7 +64,7 @@ app.post('/addStudent', async (req, res) => {
 
     // Add student data with image URL (path) to Firestore
     const studentRef = db.collection('students');
-    const studentDoc = await studentRef.add({_imageUrl : url, name, age, dob, gender, bg, religion, cast, card, address, post,place, district,state, pin, adno, email, course, dept });
+    const studentDoc = await studentRef.add({imageUrl : url, name, age, dob, gender, bg, religion, cast, card, address, post,place, district,state, pin, adno, email, course, dept });
 
     // Return the added student's data along with the imageUrl
     const addedStudent = await studentDoc.get();
@@ -87,9 +87,9 @@ app.get('/getStudentsWithFields', async (req, res) => {
 
     for (const doc of studentsSnapshot.docs) {
       const studentData = doc.data();
-      const { _imageUrl, name, age, dob, adno, email, course, dept } = studentData; // Include only desired fields
+      const { imageUrl, name, age, dob, adno, email, course, dept } = studentData; // Include only desired fields
 
-      if (_imageUrl) {
+      if (imageUrl) {
         try {
           const file = bucket.file(_imageUrl);
           const [exists] = await file.exists();
@@ -112,11 +112,11 @@ app.get('/getStudentsWithFields', async (req, res) => {
                 email,
                 course,
                 dept,
-                _imageUrl: imageUrlFromStorage,
+                imageUrl: imageUrlFromStorage,
               };
               students.push(studentWithUrls);
             } else {
-              console.error('Invalid image URL for student:', _imageUrl);
+              console.error('Invalid image URL for student:', imageUrl);
               students.push({ name, age, email }); // Include student data without the image URL
             }
           } else {
