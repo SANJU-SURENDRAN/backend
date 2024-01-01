@@ -1,0 +1,502 @@
+import 'dart:convert';
+import 'dart:html' as html;
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:testapp/studentscreen.dart';
+import 'package:testapp/subjectassign.dart';
+import 'package:testapp/subjectscreen.dart';
+import 'package:testapp/teacheropertaions.dart';
+
+import 'coursescreen.dart';
+import 'departmentscreen.dart';
+
+class DashBoardPage extends StatefulWidget {
+  const DashBoardPage({Key? key}) : super(key: key);
+
+  @override
+  _DashBoardPageState createState() => _DashBoardPageState();
+}
+
+class _DashBoardPageState extends State<DashBoardPage> {
+  TextEditingController studentNameController = TextEditingController();
+  TextEditingController StudentAgeController = TextEditingController();
+  TextEditingController StudentDobController = TextEditingController();
+  TextEditingController StudentGenderController = TextEditingController();
+  TextEditingController StudentBloodGpController = TextEditingController();
+  TextEditingController StudentReligionController = TextEditingController();
+  TextEditingController StudentCastController = TextEditingController();
+  TextEditingController StudentCardController = TextEditingController();
+  TextEditingController StudentAddressController = TextEditingController();
+  TextEditingController StudentPostController = TextEditingController();
+  TextEditingController StudentPlaceController = TextEditingController();
+  TextEditingController StudentDistrictController = TextEditingController();
+  TextEditingController StudentStateController = TextEditingController();
+  TextEditingController StudentPinController = TextEditingController();
+  TextEditingController StudentAdNoController = TextEditingController();
+  TextEditingController StudentEmailController = TextEditingController();
+  TextEditingController StudentCourseController = TextEditingController();
+  TextEditingController StudentDeptController = TextEditingController();
+  XFile? _studentimage;
+
+  List<Map<String, dynamic>> students = [];// List to hold student details
+  List<String> courses = []; // List to hold course names
+  List<String> departments = []; // List to hold department names
+
+  Future<void> getCourses() async {
+    String url = 'http://localhost:3000/getAllCourses'; // Update with your API endpoint
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        List<dynamic> jsonResponse = jsonDecode(response.body);
+
+        setState(() {
+          courses = jsonResponse.map((course) => course['courseName'] as String).toList();
+        });
+      } else {
+        print('Failed to fetch courses: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error getting courses: $e');
+    }
+  }
+
+  // Fetch departments from the API
+  Future<void> getDepartments() async {
+    String url = 'http://localhost:3000/getAllDepartments';
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        List<dynamic> jsonResponse = jsonDecode(response.body);
+
+        setState(() {
+          departments = jsonResponse
+              .map<String?>((dept) => dept['departmentName'] as String?) // Retrieve department names
+              .where((deptName) => deptName != null) // Filter out null values
+              .cast<String>() // Cast non-null values to String
+              .toList();
+        });
+      } else {
+        print('Failed to fetch departments: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error getting departments: $e');
+    }
+  }
+
+
+  Future<void> getImage() async {
+    final html.InputElement input = html.InputElement()
+      ..type = 'file';
+    input.accept = 'image/*';
+    input.click();
+
+    input.onChange.listen((event) {
+      final file = input.files!.first;
+      final reader = html.FileReader();
+
+      reader.onLoadEnd.listen((loadEndEvent) async {
+        final imageData = reader.result as String;
+        final decodedImage = base64.decode(imageData
+            .split(',')
+            .last);
+
+        setState(() {
+          _studentimage = XFile.fromData(decodedImage, name: file!.name);
+        });
+      });
+
+      reader.readAsDataUrl(file!);
+    });
+  }
+
+  Widget _displaySelectedImage() {
+    return _studentimage != null
+        ? FutureBuilder<Uint8List>(
+      future: _studentimage!.readAsBytes(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          Uint8List imageData = snapshot.data!;
+          String base64 = base64Encode(imageData);
+          return Image.memory(
+            base64Decode(base64),
+            height: 150,
+            width: 150,
+            fit: BoxFit.fill,
+          );
+        } else {
+          return const Text('Loading image...');
+        }
+      },
+    )
+        : const Text('No image selected');
+  }
+
+  Future<Uint8List> fetchImage(String imageUrl) async {
+    final response = await http.get(Uri.parse(imageUrl));
+    if (response.statusCode == 200) {
+      return response.bodyBytes.buffer.asUint8List();
+    } else {
+      throw Exception('Failed to load image');
+    }
+  }
+
+  Future<void> addStudent() async {
+    String url = 'http://localhost:3000/addStudent';
+    List<int>? imageBytes = _studentimage != null ? await _studentimage!.readAsBytes() : null;
+    String? base64Image = imageBytes != null ? base64Encode(imageBytes) : null;
+
+    try {
+      final body = {
+        'name': studentNameController.text,
+        'age': StudentAgeController.text,
+        'dob': StudentDobController.text,
+        'gender': StudentGenderController.text,
+        'bg': StudentBloodGpController.text,
+        'religion': StudentReligionController.text,
+        'cast': StudentCastController.text,
+        'card': StudentCardController.text,
+        'address': StudentAddressController.text,
+        'post': StudentPostController.text,
+        'place': StudentPlaceController.text,
+        'district': StudentDistrictController.text,
+        'state': StudentStateController.text,
+        'pin': StudentPinController.text,
+        'adno': StudentAdNoController.text,
+        'email': StudentEmailController.text,
+        'course': StudentCourseController.text,
+        'dept': StudentDeptController.text,
+        'image': base64Image ?? '', // Send the image data as a base64 string
+      };
+
+      final response = await http.post(
+        Uri.parse(url),
+        body: jsonEncode(body), // Encode the body as JSON string
+        headers: {
+          'Content-Type': 'application/json', // Set content-type as JSON
+        },
+      );
+
+      if (response.statusCode == 201) {
+        getAllStudents(); // Refresh student list on successful addition
+      } else {
+        // Handle error
+        print('Failed to add student: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error adding student: $e');
+    }
+  }
+  void clearFields() {
+    studentNameController.clear();
+    StudentAgeController.clear();
+    StudentDobController.clear();
+    StudentGenderController.clear();
+    StudentBloodGpController.clear();
+    StudentReligionController.clear();
+    StudentCastController.clear();
+    StudentCardController.clear();
+    StudentAddressController.clear();
+    StudentPostController.clear();
+    StudentPlaceController.clear();
+    StudentDistrictController.clear();
+    StudentStateController.clear();
+    StudentPinController.clear();
+    StudentAdNoController.clear();
+    StudentEmailController.clear();
+    StudentCourseController.clear();
+    StudentDeptController.clear();
+  }
+
+  Future<void> getAllStudents() async {
+    String url = 'http://localhost:3000/getStudentsWithFields';
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        List<dynamic> jsonResponse = jsonDecode(response.body);
+        setState(() {
+          students = List<Map<String, dynamic>>.from(
+            jsonResponse.map((data) => data as Map<String, dynamic>),
+          );
+        });
+      } else {
+        // Handle other HTTP status codes/errors
+        print('Request failed with status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error getting students: $e');
+    }
+  }
+
+
+  @override
+  void initState() {
+    super.initState();
+    getCourses();
+    getDepartments(); // Fetch courses when the widget initializes
+    getAllStudents();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 8,
+      child: Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.cyan.shade300,
+            title: const Center(child: Text(
+              'DashBoard', textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white),)),
+            leading: IconButton(onPressed: () {
+              Navigator.pushReplacement((context),
+                  MaterialPageRoute(builder: (context) => StudentList()));
+            }, icon: const Icon(Icons.person)),
+            bottom: TabBar(
+              tabAlignment: TabAlignment.center,
+              indicatorColor: Colors.white,
+              labelColor: Colors.black,
+              unselectedLabelColor: Colors.white,
+              labelPadding: const EdgeInsets.only(left: 50, right: 50),
+              isScrollable: true,
+              tabs: List.generate(
+                8,
+                    (index) =>
+                    Tab(
+                      text: 'Tab ${index + 1}',
+                    ),
+              ),
+            ),
+          ),
+          body:  TabBarView(
+              children: [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ElevatedButton(
+                            onPressed: getImage,
+                            child: const Text('Select Image'),
+                          ),
+                           const SizedBox(height: 20.0),
+                          SizedBox(
+                            height: 150,
+                            width: 150,
+                            child: _displaySelectedImage(),
+                          ),
+                          TextField(
+                            controller: studentNameController,
+                            decoration: const InputDecoration(labelText: 'Name'),
+                          ),
+                          TextField(
+                            controller: StudentAgeController,
+                            decoration: const InputDecoration(labelText: 'Age'),
+                            keyboardType: TextInputType.number,
+                          ),
+                          TextField(
+                            controller: StudentDobController,
+                            decoration: const InputDecoration(labelText: 'DOB'),
+                          ),
+                          TextField(
+                            controller: StudentGenderController,
+                            decoration: const InputDecoration(labelText: 'Gender'),
+                          ),
+                          TextField(
+                            controller: StudentBloodGpController,
+                            decoration: const InputDecoration(
+                                labelText: 'Blood Group'),
+                          ),
+                          TextField(
+                            controller: StudentReligionController,
+                            decoration: const InputDecoration(
+                                labelText: 'Religion'),
+                          ),
+                          TextField(
+                            controller: StudentCastController,
+                            decoration: const InputDecoration(labelText: 'Cast'),
+                          ),
+                          TextField(
+                            controller: StudentCardController,
+                            decoration: const InputDecoration(
+                                labelText: 'Ration Card'),
+                          ),
+                          TextField(
+                            controller: StudentAddressController,
+                            decoration: const InputDecoration(labelText: 'Address'),
+                          ),
+                          TextField(
+                            controller: StudentPostController,
+                            decoration: const InputDecoration(
+                                labelText: 'Post Office'),
+                          ),
+                          TextField(
+                            controller: StudentPlaceController,
+                            decoration: const InputDecoration(labelText: 'Place'),
+                          ),
+                          TextField(
+                            controller: StudentDistrictController,
+                            decoration: const InputDecoration(
+                                labelText: 'District'),
+                          ),
+                          TextField(
+                            controller: StudentStateController,
+                            decoration: const InputDecoration(labelText: 'State'),
+                          ),
+                          TextField(
+                            controller: StudentPinController,
+                            decoration: const InputDecoration(labelText: 'Pin code'),
+                          ),
+                          TextField(
+                            controller: StudentAdNoController,
+                            decoration: const InputDecoration(
+                                labelText: 'Admission NO'),
+                          ),
+                          TextField(
+                            controller: StudentEmailController,
+                            decoration: const InputDecoration(labelText: 'Email'),
+                          ),
+                          DropdownButtonFormField<String>(
+                            value: StudentCourseController.text.isNotEmpty && courses.isNotEmpty
+                                ? (courses.contains(StudentCourseController.text)
+                                ? StudentCourseController.text
+                                : courses.first)
+                                : null,
+                            items: courses.map((course) {
+                              return DropdownMenuItem<String>(
+                                value: course,
+                                child: Text(course),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                StudentCourseController.text = value ?? '';
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Course',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 20,),
+                          DropdownButtonFormField<String>(
+                            value: StudentDeptController.text.isNotEmpty && departments.isNotEmpty
+                                ? (departments.contains(StudentDeptController.text)
+                                ? StudentDeptController.text
+                                : departments.first)
+                                : null,
+                            items: departments.map((dept) {
+                              return DropdownMenuItem<String>(
+                                value: dept,
+                                child: Text(dept),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                StudentDeptController.text = value ?? '';
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Department',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 20.0),
+                          ElevatedButton(
+                            onPressed: addStudent,
+                            child: const Text('Add Student'),
+                          ),
+                          const SizedBox(height: 20.0),
+                          const Text(
+                            'Student Details',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 10.0),
+                          SizedBox(
+                            width: MediaQuery.of(context).size.width,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Image')),
+                                  DataColumn(label: Text('Name')),
+                                  DataColumn(label: Text('Age')),
+                                  DataColumn(label: Text('DOB')),
+                                  DataColumn(label: Text('Admission No')),
+                                  DataColumn(label: Text('Email')),
+                                  DataColumn(label: Text('Course')),
+                                  DataColumn(label: Text('Department')),
+                                  // Add more DataColumn widgets for each field
+                                ],
+                                rows: students.map((student) {
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(
+                                        student.containsKey('imageUrl')
+                                            ? Image.network(
+                                          student['imageUrl'],
+                                          height: 50,
+                                          width: 50,
+                                          fit: BoxFit.cover,
+                                        )
+                                            : const Text('No image'),
+                                      ),
+                                      DataCell(Text(student['name'] ?? '')),
+                                      DataCell(Text(student['age']?.toString() ?? '')),
+                                      DataCell(Text(student['dob'] ?? '')),
+                                      DataCell(Text(student['adno'] ?? '')),
+                                      DataCell(Text(student['email'] ?? '')),
+                                      DataCell(Text(student['course'] ?? '')),
+                                      DataCell(Text(student['dept'] ?? '')),
+                                      // Add more DataCell widgets for each field
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                  const Center(
+                  child:TeacherOperations()
+                ),
+                const Center(
+                  child: TeacherListScreen()
+                ),
+                const Center(
+                  child: AddDepartmentScreen()
+                ),
+                const Center(
+                  child: AddCourseScreen()
+                ),
+                const Center(
+                  child: AddSubjectScreen()
+                ),
+                const Center(
+                  child: Text(
+                    'Content for Tab 7',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+                const Center(
+                  child: Text(
+                    'Content for Tab 8',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ]
+          ),
+      ),
+    );
+  }
+}
