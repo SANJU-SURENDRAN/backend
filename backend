@@ -1,0 +1,459 @@
+const cors = require('cors');
+const express = require('express');
+const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
+
+const serviceAccount = require('C:/Users/ARTIS/Desktop/server/attendanceapp-a0bd1-firebase-adminsdk-me811-5296460802.json'); // Replace with your service account key path
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'gs://attendanceapp-a0bd1.appspot.com'
+  // Add any other necessary configurations
+});
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+app.use(bodyParser.json());
+
+
+// Firebase Authentication
+const auth = admin.auth();
+// Endpoint for user login/authentication
+app.post('/api/user/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const userCredential = await admin.auth().getUserByEmail(email);
+    // Perform custom logic for user validation here (e.g., comparing passwords, etc.)
+
+    // If validation successful, generate a custom token and send it to the client
+    const customToken = await admin.auth().createCustomToken(userCredential.uid);
+    res.status(200).json({ token: customToken });
+  } catch (error) {
+    console.error('Error during authentication:', error);
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+const db = admin.firestore();
+const bucket = admin.storage().bucket();
+
+// Endpoint to add a student to Firestore along with image
+app.post('/addStudent', async (req, res) => {
+  try {
+    const {image, name, age, dob, gender, bg, religion, cast, card, address, post,place, district,state, pin, adno, email, course, dept } = req.body;
+    
+    // Convert base64 image to a buffer
+    const imageBuffer = Buffer.from(image, 'base64');
+
+    // Add the image to Firebase Storage
+    const fileName = `images/${Date.now()}_${name}.png`;
+    const file = bucket.file(fileName);
+    await file.save(imageBuffer, {
+      metadata: { contentType: 'image/png' },
+      public: true, // Make the image publicly accessible
+    });
+
+    // Get the public URL of the uploaded image
+    const [url] = await file.getSignedUrl({ action: 'read', expires: '01-01-2100' });
+
+    // Store only the image path relative to the storage bucket
+    const imagePath = `images/${Date.now()}_${name}.png`;
+
+    // Add student data with image URL (path) to Firestore
+    const studentRef = db.collection('students');
+    const studentDoc = await studentRef.add({_imageUrl : url, name, age, dob, gender, bg, religion, cast, card, address, post,place, district,state, pin, adno, email, course, dept });
+
+    // Return the added student's data along with the imageUrl
+    const addedStudent = await studentDoc.get();
+    const addedStudentData = addedStudent.data();
+    res.status(201).json({
+      message: 'Student added successfully',
+      student: { ...addedStudentData, imageUrl: url }, // Include imageUrl in the response
+    });
+  } catch (error) {
+    console.error('Error adding student:', error);
+    res.status(500).json({ error: 'Unable to add student' });
+  }
+});
+
+// Endpoint to get all students from Firestore
+app.get('/getStudentsWithFields', async (req, res) => {
+  try {
+    const studentsSnapshot = await db.collection('students').get();
+    const students = [];
+
+    for (const doc of studentsSnapshot.docs) {
+      const studentData = doc.data();
+      const { _imageUrl, name, age, dob, adno, email, course, dept } = studentData; // Include only desired fields
+
+      if (_imageUrl) {
+        try {
+          const file = bucket.file(_imageUrl);
+          const [exists] = await file.exists();
+
+          if (exists) {
+            // Generate the download URL
+            const [metadata] = await file.getMetadata();
+            const downloadUrl = await file.getSignedUrl({ action: 'read', expires: '01-01-2100' });
+
+            // Ensure the downloadUrl is an array and has data before accessing
+            const imageUrlFromStorage = Array.isArray(downloadUrl) && downloadUrl.length > 0 ? downloadUrl[0] : null;
+
+            if (imageUrlFromStorage) {
+              // Include the download URL in the student data for this particular student
+              const studentWithUrls = {
+                name,
+                age,
+                dob,
+                adno,
+                email,
+                course,
+                dept,
+                _imageUrl: imageUrlFromStorage,
+              };
+              students.push(studentWithUrls);
+            } else {
+              console.error('Invalid image URL for student:', _imageUrl);
+              students.push({ name, age, email }); // Include student data without the image URL
+            }
+          } else {
+            console.error('Image not found for student:', _imageUrl);
+            students.push({ name, age, email }); // Include student data without the image URL
+          }
+        } catch (imageError) {
+          console.error('Error fetching image for student:', imageError);
+          students.push({ name, age, email }); // Include student data without the image URL in case of an error
+        }
+      } else {
+        students.push({ name, age, email }); // Include student data without the image URL if imageUrl is empty or undefined
+      }
+    }
+
+    res.status(200).json(students);
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ error: 'Unable to fetch students' });
+  }
+});
+
+app.post('/addTeacher', async (req, res) => {
+  try {
+    const {image, name, age, dob, gender, bg, address, post,place, district,state, pin, email } = req.body;
+    
+    if (!image || !name || !age || !dob || !gender || !bg || !address || !post || !place || !district || !state || !pin || !email) {
+      res.status(400).json({ error: 'Required fields are missing in the request' });
+      return;
+    }
+
+    // Convert base64 image to a buffer
+    const imageBuffer = Buffer.from(image, 'base64');
+
+    // Add the image to Firebase Storage
+    const fileName = `images/${Date.now()}_${name}.png`;
+    const file = bucket.file(fileName);
+    await file.save(imageBuffer, {
+      metadata: { contentType: 'image/png' },
+      public: true, // Make the image publicly accessible
+    });
+
+    // Get the public URL of the uploaded image
+    const [url] = await file.getSignedUrl({ action: 'read', expires: '01-01-2100' });
+
+    // Store only the image path relative to the storage bucket
+    const imagePath = `images/${Date.now()}_${name}.png`;
+
+    // Add student data with image URL (path) to Firestore
+    const teacherRef = db.collection('teachers');
+    const teacherDoc = await teacherRef.add({imageUrl : url, name, age, dob, gender, bg, address, post,place, district,state, pin, email });
+
+    // Return the added student's data along with the imageUrl
+    const addedTeacher = await teacherDoc.get();
+    const addedTeacherData = addedTeacher.data();
+    res.status(201).json({
+      message: 'Teacher added successfully',
+      teacher: { ...addedTeacherData, imageUrl: url }, // Include imageUrl in the response
+    });
+  } catch (error) {
+    console.error('Error adding teacher:', error);
+    res.status(500).json({ error: 'Unable to add teacher' });
+  }
+});
+
+app.get('/getTeachers', async (req, res) => {
+  try {
+    const teachersSnapshot = await db.collection('teachers').get();
+    const teachers = [];
+
+    for (const doc of teachersSnapshot.docs) {
+      const teacherData = doc.data();
+      const { imageUrl, name, age, dob, email,} = teacherData; // Include only desired fields
+
+      if (imageUrl) {
+        try {
+          const file = bucket.file(imageUrl);
+          const [exists] = await file.exists();
+
+          if (exists) {
+            // Generate the download URL
+            const [metadata] = await file.getMetadata();
+            const downloadUrl = await file.getSignedUrl({ action: 'read', expires: '01-01-2100' });
+
+            // Ensure the downloadUrl is an array and has data before accessing
+            const imageUrlFromStorage = Array.isArray(downloadUrl) && downloadUrl.length > 0 ? downloadUrl[0] : null;
+
+            if (imageUrlFromStorage) {
+             
+              const teacherWithUrls = {
+                name,
+                age,
+                dob,
+                adno,
+                email,
+                imageUrl: imageUrlFromStorage,
+              };
+              teachers.push(teacherWithUrls);
+            } else {
+              console.error('Invalid image URL for teacher:', imageUrl);
+              teachers.push({ name, age, email }); // Include student data without the image URL
+            }
+          } else {
+            console.error('Image not found for teacher:', imageUrl);
+            teachers.push({ name, age, email }); // Include student data without the image URL
+          }
+        } catch (imageError) {
+          console.error('Error fetching image for teacher:', imageError);
+          teachers.push({ name, age, email }); // Include student data without the image URL in case of an error
+        }
+      } else {
+        teachers.push({ name, age, email }); // Include student data without the image URL if imageUrl is empty or undefined
+      }
+    }
+    res.status(200).json(teachers);
+  } catch (error) {
+    console.error('Error fetching teachers:', error);
+    res.status(500).json({ error: 'Unable to fetch teachers' });
+  }
+});
+
+// Endpoint to get teacher names for assigning subjects
+app.get('/getTeacherNames', async (req, res) => {
+  try {
+    const teachersSnapshot = await db.collection('teachers').get();
+    const teacherNames = [];
+
+    for (const doc of teachersSnapshot.docs) {
+      const teacherData = doc.data();
+      const { name } = teacherData; // Extracting teacher names
+
+      teacherNames.push(name);
+    }
+
+    res.status(200).json(teacherNames);
+  } catch (error) {
+    console.error('Error fetching teacher names:', error);
+    res.status(500).json({ error: 'Unable to fetch teacher names' });
+  }
+});
+// Endpoint to assign subjects to a teacher
+app.post('/assignSubjectsToTeacher', async (req, res) => {
+  try {
+    const { teacherName, subjects } = req.body;
+
+    // Check if the teacher exists in the database
+    const teacherQuerySnapshot = await db.collection('teachers').where('name', '==', teacherName).get();
+
+    if (teacherQuerySnapshot.empty) {
+      res.status(404).json({ error: 'Teacher not found' });
+      return;
+    }
+
+    // Assuming subjects is an array of subjects to be assigned
+    // Add or update subjects for the specified teacher
+    const teacherDoc = teacherQuerySnapshot.docs[0];
+    const teacherRef = db.collection('teachers').doc(teacherDoc.id);
+
+    await teacherRef.update({
+      subjects: admin.firestore.FieldValue.arrayUnion(...subjects)
+    });
+
+    res.status(200).json({ message: 'Subjects assigned successfully' });
+  } catch (error) {
+    console.error('Error assigning subjects to teacher:', error);
+    res.status(500).json({ error: 'Unable to assign subjects' });
+  }
+});
+// Endpoint to get teacher names and their assigned subjects
+app.get('/getTeacherSubjects', async (req, res) => {
+  try {
+    const teachersSnapshot = await db.collection('teachers').get();
+    const teacherSubjects = [];
+
+    for (const doc of teachersSnapshot.docs) {
+      const teacherData = doc.data();
+      const { name, subjects } = teacherData || {};
+
+      if (name === undefined || subjects === undefined || name === null || subjects === null) {
+        console.error(`Missing fields for teacher ${doc.id}:`, {
+          name: name === undefined || name === null,
+          subjects: subjects === undefined || subjects === null,
+        });
+        // Optionally handle the missing fields or null values here
+      } else {
+        teacherSubjects.push({ name, subjects });
+      }
+    }
+
+    res.status(200).json(teacherSubjects);
+  } catch (error) {
+    console.error('Error fetching teacher names and subjects:', error);
+    res.status(500).json({ error: 'Unable to fetch teacher names and subjects' });
+  }
+});
+
+app.post('/addDepartment', async (req, res) => {
+  try {
+    const { departmentName} = req.body;
+
+    const departmentRef = db.collection('departments');
+    await departmentRef.add({ departmentName });
+
+    res.status(201).json({ message: 'Department added successfully' });
+  } catch (error) {
+    console.error('Error adding department:', error);
+    res.status(500).json({ error: 'Unable to add department' });
+  }
+});
+// Endpoint to get all departments from Firestore
+app.get('/getDepartments', async (req, res) => {
+  try {
+    const departmentsSnapshot = await db.collection('departments').get();
+    const departments = [];
+
+    departmentsSnapshot.forEach((doc) => {
+      const departmentData = doc.data();
+      departments.push({
+        id: doc.id,
+        departmentName: departmentData.departmentname,
+      });
+    });
+
+    res.status(200).json(departments);
+  } catch (error) {
+    console.error('Error fetching departments:', error);
+    res.status(500).json({ error: 'Unable to fetch departments' });
+  }
+});
+
+app.get('/getAllDepartments', async (req, res) => {
+  try {
+    const departmentsSnapshot = await db.collection('departments').get();
+    const departments = [];
+
+    departmentsSnapshot.forEach((doc) => {
+      const departmentData = doc.data();
+      departments.push({
+        id: doc.id,
+        departmentName: departmentData.departmentName, // Ensure using the correct property name
+      });
+    });
+
+    res.status(200).json(departments);
+  } catch (error) {
+    console.error('Error fetching departments:', error);
+    res.status(500).json({ error: 'Unable to fetch departments' });
+  }
+});
+
+app.post('/addCourse', async (req, res) => {
+  try {
+    const { courseName } = req.body;
+
+    if (!courseName) {
+      res.status(400).json({ error: 'Course name is required' });
+      return;
+    }
+
+    // Add course data to Firestore
+    const courseRef = db.collection('courses');
+    const courseDoc = await courseRef.add({ courseName });
+
+    res.status(201).json({ message: 'Course added successfully', courseId: courseDoc.id });
+  } catch (error) {
+    console.error('Error adding course:', error);
+    res.status(500).json({ error: 'Unable to add course' });
+  }
+});
+
+// Endpoint to get all courses
+app.get('/getAllCourses', async (req, res) => {
+  try {
+    const coursesSnapshot = await db.collection('courses').get();
+    const courses = [];
+
+    coursesSnapshot.forEach((doc) => {
+      const courseData = doc.data();
+      if (courseData && courseData.courseName !== undefined && courseData.courseName !== null) {
+        courses.push({
+          id: doc.id,
+          courseName: courseData.courseName,
+        });
+      }
+    });
+
+    res.status(200).json(courses);
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    res.status(500).json({ error: 'Unable to fetch courses' });
+  }
+});
+
+app.post('/addSubject', async (req, res) => {
+  try {
+    const { subjectName } = req.body;
+
+    if (!subjectName) {
+      res.status(400).json({ error: 'Subject name is required' });
+      return;
+    }
+
+    // Add course data to Firestore
+    const subjectRef = db.collection('subjects');
+    const subjectDoc = await subjectRef.add({ subjectName });
+
+    res.status(201).json({ message: 'Subject added successfully', subjectId: subjectDoc.id });
+  } catch (error) {
+    console.error('Error adding subject:', error);
+    res.status(500).json({ error: 'Unable to add subject' });
+  }
+});
+
+app.get('/getAllSubjects', async (req, res) => {
+  try {
+    const subjectsSnapshot = await db.collection('subjects').get();
+    const subjects = [];
+
+    subjectsSnapshot.forEach((doc) => {
+      const subjectData = doc.data();
+      if (subjectData && subjectData.subjectName !== undefined && subjectData.subjectName !== null) {
+        subjects.push({
+          id: doc.id,
+          subjectName: subjectData.subjectName,
+        });
+      }
+    });
+
+    res.status(200).json(subjects);
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({ error: 'Unable to fetch subjects' });
+  }
+});
+
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
